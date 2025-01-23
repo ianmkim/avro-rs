@@ -398,6 +398,20 @@ impl ser::SerializeMap for MapSerializer {
     {
         let key = key.serialize(&mut Serializer::default())?;
 
+        // convert all convertable types to a string to store in the map since avro maps do not
+        // support non string keys. It's unfortunate that this can error out in the runtime.
+        let key = Value::String(match key {
+            Value::String(key) => key,
+            Value::Long(key) => format!("{}", key),
+            Value::Int(key) => format!("{}", key),
+            Value::Uuid(key) => key.to_string(),
+            _ => {
+                return Err(ser::Error::custom(
+                    "map key could not be converted to string",
+                ))
+            }
+        });
+
         if let Value::String(key) = key {
             self.indices.insert(key, self.values.len());
             Ok(())

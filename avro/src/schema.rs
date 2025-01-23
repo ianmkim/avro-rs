@@ -35,7 +35,7 @@ use serde::{
 use serde_json::{Map, Value};
 use std::{
     borrow::Borrow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, LinkedList},
     fmt,
     fmt::Debug,
     hash::Hash,
@@ -43,6 +43,17 @@ use std::{
     str::FromStr,
 };
 use strum_macros::{Display, EnumDiscriminants, EnumString};
+
+// add in third party type support
+use chrono::{DateTime, Utc};
+use typenum::{PInt, UInt, UTerm, B1, Z0};
+use uom::si::amount_of_substance::mole;
+use uom::si::electric_current::milliampere;
+use uom::si::length::micrometer;
+use uom::si::luminous_intensity::candela;
+use uom::si::mass::gram;
+use uom::si::thermodynamic_temperature::kelvin;
+use uom::si::time::second;
 
 /// Represents an Avro schema fingerprint
 /// More information about Avro schema fingerprints can be found in the
@@ -2541,6 +2552,146 @@ pub mod derive {
     impl_schema!(uuid::Uuid, Schema::Uuid);
     impl_schema!(core::time::Duration, Schema::Duration);
 
+    // these are not safe conversions, responsibility is with the serializer to ensure these values
+    // convert properly
+    impl_schema!(usize, Schema::Long);
+    impl_schema!(u64, Schema::Long);
+    impl_schema!(std::sync::atomic::AtomicU64, Schema::Long);
+
+    impl AvroSchemaComponent for DateTime<Utc> {
+        fn get_schema_in_ctxt(_: &mut Names, _: &Namespace) -> Schema {
+            // this is type safe, since the internal representation is i64
+            Schema::Long
+        }
+    }
+
+    // TODO: these UOM schema types are fucked, fixed later
+    impl AvroSchemaComponent
+        for uom::si::Quantity<
+            dyn uom::si::Dimension<
+                L = PInt<UInt<UTerm, B1>>,
+                M = Z0,
+                T = Z0,
+                I = Z0,
+                Th = Z0,
+                N = Z0,
+                J = Z0,
+                Kind = dyn uom::Kind,
+            >,
+            dyn uom::si::Units<
+                f64,
+                length = micrometer,
+                mass = gram,
+                time = second,
+                electric_current = milliampere,
+                thermodynamic_temperature = kelvin,
+                amount_of_substance = mole,
+                luminous_intensity = candela,
+            >,
+            f64,
+        >
+    {
+        fn get_schema_in_ctxt(_: &mut Names, _: &Namespace) -> Schema {
+            Schema::Double
+        }
+    }
+
+    impl<T> AvroSchemaComponent for LinkedList<T>
+    where
+        T: AvroSchemaComponent,
+    {
+        fn get_schema_in_ctxt(
+            named_schemas: &mut Names,
+            enclosing_namespace: &Namespace,
+        ) -> Schema {
+            Schema::array(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
+        }
+    }
+
+    impl<T> AvroSchemaComponent for HashSet<T>
+    where
+        T: AvroSchemaComponent,
+    {
+        fn get_schema_in_ctxt(
+            named_schemas: &mut Names,
+            enclosing_namespace: &Namespace,
+        ) -> Schema {
+            Schema::array(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
+        }
+    }
+
+    impl<U, T> AvroSchemaComponent for indexmap::IndexMap<U, T>
+    where
+        T: AvroSchemaComponent,
+        U: AvroSchemaComponent,
+    {
+        fn get_schema_in_ctxt(
+            named_schemas: &mut Names,
+            enclosing_namespace: &Namespace,
+        ) -> Schema {
+            Schema::map(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
+        }
+    }
+
+    impl<T> AvroSchemaComponent for nalgebra::base::Vector2<T>
+    where
+        T: AvroSchemaComponent,
+    {
+        fn get_schema_in_ctxt(
+            named_schemas: &mut Names,
+            enclosing_namespace: &Namespace,
+        ) -> Schema {
+            Schema::array(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
+        }
+    }
+
+    impl<T> AvroSchemaComponent for nalgebra::geometry::Point2<T>
+    where
+        T: AvroSchemaComponent
+            + std::cmp::PartialEq
+            + std::fmt::Debug
+            + std::clone::Clone
+            + 'static,
+    {
+        fn get_schema_in_ctxt(
+            named_schemas: &mut Names,
+            enclosing_namespace: &Namespace,
+        ) -> Schema {
+            Schema::array(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
+        }
+    }
+
+    // For angle types
+    impl AvroSchemaComponent
+        for uom::si::Quantity<
+            dyn uom::si::Dimension<
+                L = Z0,
+                M = Z0,
+                T = Z0,
+                I = Z0,
+                Th = Z0,
+                N = Z0,
+                J = Z0,
+                Kind = dyn uom::si::marker::AngleKind,
+            >,
+            dyn uom::si::Units<
+                f64,
+                length = micrometer,
+                mass = gram,
+                time = second,
+                electric_current = milliampere,
+                thermodynamic_temperature = kelvin,
+                amount_of_substance = mole,
+                luminous_intensity = candela,
+            >,
+            f64,
+        >
+    {
+        fn get_schema_in_ctxt(_: &mut Names, _: &Namespace) -> Schema {
+            Schema::Double
+        }
+    }
+
     impl<T> AvroSchemaComponent for Vec<T>
     where
         T: AvroSchemaComponent,
@@ -2585,14 +2736,17 @@ pub mod derive {
         }
     }
 
-    impl<T> AvroSchemaComponent for HashMap<String, T>
+    impl<K, T> AvroSchemaComponent for HashMap<K, T>
     where
+        K: AvroSchemaComponent,
         T: AvroSchemaComponent,
     {
         fn get_schema_in_ctxt(
             named_schemas: &mut Names,
             enclosing_namespace: &Namespace,
         ) -> Schema {
+            // we convert all K type to string when we serialize, however, we want to keep the
+            // output type here as K to allow the schema generation to work
             Schema::map(T::get_schema_in_ctxt(named_schemas, enclosing_namespace))
         }
     }

@@ -73,6 +73,11 @@ thiserror = { default-features = false, version = "2.0.11" }
 uuid = { default-features = false, version = "1.12.1", features = ["serde", "std"] }
 xz2 = { default-features = false, version = "0.1.7", optional = true }
 zstd = { default-features = false, version = "0.13.2", optional = true }
+uom = { version = "0.36.0", features=["serde"] }
+typenum = "1.17.0"
+chrono = { version = "0.4.26", features=["serde"] }
+nalgebra= { version = "0.33.0", features = ["serde-serialize"] }
+indexmap= { version = "2.3.0", features = ["serde"] }
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
