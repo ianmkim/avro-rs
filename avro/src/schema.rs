@@ -2555,8 +2555,7 @@ pub mod derive {
     // these are not safe conversions, responsibility is with the serializer to ensure these values
     // convert properly
     impl_schema!(usize, Schema::Long);
-    impl_schema!(u64, Schema::Long);
-    impl_schema!(std::sync::atomic::AtomicU64, Schema::Long);
+    impl_schema!(std::sync::atomic::AtomicU32, Schema::Long);
 
     impl AvroSchemaComponent for DateTime<Utc> {
         fn get_schema_in_ctxt(_: &mut Names, _: &Namespace) -> Schema {
